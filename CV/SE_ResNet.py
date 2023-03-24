@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 import torchvision
 
-print("PyTorch Version: ",torch.__version__)
-print("Torchvision Version: ",torchvision.__version__)
-
-__all__ = ['ResNet50', 'ResNet101','ResNet152']
 
 def Conv1(in_planes, places, stride=2):
     return nn.Sequential(
@@ -15,9 +11,26 @@ def Conv1(in_planes, places, stride=2):
         nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
     )
 
-class Bottleneck(nn.Module):
+class SE_Module(nn.Module):
+    def __init__(self, channel,ratio = 16):
+        super(SE_Module, self).__init__()
+        self.squeeze = nn.AdaptiveAvgPool2d(1)
+        self.excitation = nn.Sequential(
+                nn.Linear(in_features=channel, out_features=channel // ratio),
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=channel // ratio, out_features=channel),
+                nn.Sigmoid()
+            )
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.squeeze(x).view(b, c)
+        z = self.excitation(y).view(b, c, 1, 1)
+        return x * z.expand_as(x)
+
+
+class SE_ResNetBlock(nn.Module):
     def __init__(self,in_places,places, stride=1,downsampling=False, expansion = 4):
-        super(Bottleneck,self).__init__()
+        super(SE_ResNetBlock,self).__init__()
         self.expansion = expansion
         self.downsampling = downsampling
 
@@ -50,9 +63,9 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
         return out
 
-class ResNet(nn.Module):
+class SE_ResNet(nn.Module):
     def __init__(self,blocks, num_classes=1000, expansion = 4):
-        super(ResNet,self).__init__()
+        super(SE_ResNet,self).__init__()
         self.expansion = expansion
 
         self.conv1 = Conv1(in_planes = 3, places= 64)
@@ -74,9 +87,9 @@ class ResNet(nn.Module):
 
     def make_layer(self, in_places, places, block, stride):
         layers = []
-        layers.append(Bottleneck(in_places, places,stride, downsampling =True))
+        layers.append(SE_ResNetBlock(in_places, places,stride, downsampling =True))
         for i in range(1, block):
-            layers.append(Bottleneck(places*self.expansion, places))
+            layers.append(SE_ResNetBlock(places*self.expansion, places))
 
         return nn.Sequential(*layers)
 
@@ -94,22 +107,19 @@ class ResNet(nn.Module):
         x = self.fc(x)
         return x
 
-def ResNet50():
-    return ResNet([3, 4, 6, 3])
-
-def ResNet101():
-    return ResNet([3, 4, 23, 3])
-
-def ResNet152():
-    return ResNet([3, 8, 36, 3])
-
+def SE_ResNet50():
+    return SE_ResNet([3, 4, 6, 3])
 
 if __name__=='__main__':
-    #model = torchvision.models.resnet50()
-    model = ResNet50()
+    model = SE_ResNet50()
     print(model)
 
     input = torch.randn(1, 3, 224, 224)
     out = model(input)
     print(out.shape)
+
+
+
+
+
 
